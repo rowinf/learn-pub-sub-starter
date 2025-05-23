@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -19,17 +17,15 @@ func main() {
 		fmt.Println("Failed to connect to RabbitMQ:", err)
 		return
 	}
-	// Wait for Ctrl+C (SIGINT) to exit gracefully
-	signalChan := make(chan os.Signal, 1)
 	defer conn.Close()
 	fmt.Println("Connected to RabbitMQ")
-	welcome, err := gamelogic.ClientWelcome()
+	userName, err := gamelogic.ClientWelcome()
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
 	}
-	fmt.Println("Welcome to the Peril client, ", welcome)
-	queueName := "pause.suntzu"
+	fmt.Println("Welcome to the Peril client, ", userName)
+	queueName := "pause." + userName
 	routingKey := routing.PauseKey
 	boundChannel, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, queueName, routingKey, 1)
 	if err != nil {
@@ -37,14 +33,25 @@ func main() {
 		return
 	}
 	defer boundChannel.Close()
+	gameState := gamelogic.NewGameState(userName)
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-	go func() {
-		<-sig
-		fmt.Println("\nReceived interrupt. Shutting down...")
-		close(signalChan)
-	}()
-
-	<-signalChan
+	for {
+		userInput := gamelogic.GetInput()
+		if userInput[0] == "move" {
+			gameState.CommandMove(userInput)
+		} else if userInput[0] == "spawn" {
+			gameState.CommandSpawn(userInput)
+		} else if userInput[0] == "status" {
+			gameState.CommandStatus()
+		} else if userInput[0] == "help" {
+			gamelogic.PrintClientHelp()
+		} else if userInput[0] == "spam" {
+			fmt.Println("Spamming not allowed yet!")
+		} else if userInput[0] == "quit" {
+			gamelogic.PrintQuit()
+			break
+		} else {
+			fmt.Println("Invalid command. Type 'help' for a list of commands.")
+		}
+	}
 }

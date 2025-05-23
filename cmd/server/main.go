@@ -3,9 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/signal"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -21,37 +20,53 @@ func main() {
 	defer conn.Close()
 	fmt.Println("Connected to RabbitMQ")
 	fmt.Println("Starting Peril server...")
-	// Wait for Ctrl+C (SIGINT) to exit gracefully
-	signalChan := make(chan os.Signal, 1)
+	gamelogic.PrintServerHelp()
 	pubChan, err := conn.Channel()
 	if err != nil {
 		fmt.Println("Failed to open a channel:", err)
 		return
 	}
 	defer pubChan.Close()
-
-	// Publish a message to the "test" exchange with the routing key "test"
-	// Replace with your exchange and routing key
-	exchange := routing.ExchangePerilDirect
-	routingKey := routing.PauseKey
-	// Replace with your message
-	message := routing.PlayingState{IsPaused: true}
-	pubMsg, err := json.Marshal(message)
-	// Replace with your message
-	err = pubsub.PublishJSON(pubChan, exchange, routingKey, pubMsg)
-
-	if err != nil {
-		fmt.Println("Failed to publish message:", err)
+	exchange := routing.ExchangePerilTopic
+	queueName := routing.GameLogSlug
+	routingKey := routing.GameLogSlug + ".*"
+	_, _, derr := pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, 2)
+	if derr != nil {
+		fmt.Println("Failed to declare and bind queue:", err)
 		return
 	}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-	go func() {
-		<-sig
-		fmt.Println("\nReceived interrupt. Shutting down...")
-		close(signalChan)
-	}()
+	for {
+		userInput := gamelogic.GetInput()
+		if userInput[0] == "pause" {
+			fmt.Println("Sending a pause message...")
+			exchange := routing.ExchangePerilDirect
+			routingKey := routing.PauseKey
+			message := routing.PlayingState{IsPaused: true}
+			pubMsg, err := json.Marshal(message)
+			err = pubsub.PublishJSON(pubChan, exchange, routingKey, pubMsg)
 
-	<-signalChan
+			if err != nil {
+				fmt.Println("Failed to publish message:", err)
+				break
+			}
+		} else if userInput[0] == "resume" {
+			fmt.Println("Sending a resume message...")
+			exchange := routing.ExchangePerilDirect
+			routingKey := routing.PauseKey
+			message := routing.PlayingState{IsPaused: false}
+			pubMsg, err := json.Marshal(message)
+			err = pubsub.PublishJSON(pubChan, exchange, routingKey, pubMsg)
+
+			if err != nil {
+				fmt.Println("Failed to publish message:", err)
+				break
+			}
+		} else if userInput[0] == "quit" {
+			fmt.Println("Quitting...")
+			break
+		} else {
+			fmt.Println("Unknown command. Type 'help' for a list of commands.")
+		}
+	}
 }
