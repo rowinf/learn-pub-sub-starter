@@ -32,6 +32,7 @@ func main() {
 		fmt.Println("Failed to declare and bind queue:", err)
 		return
 	}
+	armyMovesChannel, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, userName, routing.ArmyMovesPrefix+".*", 1)
 	defer boundChannel.Close()
 	gameState := gamelogic.NewGameState(userName)
 	err = pubsub.SubscribeJSON(
@@ -46,11 +47,26 @@ func main() {
 		fmt.Println("Failed to subscribe to queue:", err)
 		return
 	}
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, userName, routing.ArmyMovesPrefix+".*", 1, handlerMove(gameState))
+	if err != nil {
+		fmt.Println("Failed to subscribe to queue:", err)
+		return
+	}
 
 	for {
 		userInput := gamelogic.GetInput()
 		if userInput[0] == "move" {
-			gameState.CommandMove(userInput)
+			move, err := gameState.CommandMove(userInput)
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+			fmt.Printf("publishing move: %s\n", routing.ArmyMovesPrefix+"."+userName)
+			err = pubsub.PublishJSON(armyMovesChannel, routing.ExchangePerilTopic, routing.ArmyMovesPrefix+".*", move)
+			if err != nil {
+				fmt.Println("Failed to publish message:", err)
+				break
+			}
 		} else if userInput[0] == "spawn" {
 			gameState.CommandSpawn(userInput)
 		} else if userInput[0] == "status" {
@@ -72,5 +88,12 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
 	return func(ps routing.PlayingState) {
 		defer fmt.Print("> ")
 		gs.HandlePause(ps)
+	}
+}
+
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(move gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		gs.HandleMove(move)
 	}
 }
