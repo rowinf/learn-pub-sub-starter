@@ -34,6 +34,18 @@ func main() {
 	}
 	defer boundChannel.Close()
 	gameState := gamelogic.NewGameState(userName)
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilDirect,
+		queueName,
+		routingKey,
+		1,
+		handlerPause(gameState),
+	)
+	if err != nil {
+		fmt.Println("Failed to subscribe to queue:", err)
+		return
+	}
 
 	for {
 		userInput := gamelogic.GetInput()
@@ -53,5 +65,12 @@ func main() {
 		} else {
 			fmt.Println("Invalid command. Type 'help' for a list of commands.")
 		}
+	}
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
 	}
 }

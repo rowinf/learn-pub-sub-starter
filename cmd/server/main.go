@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -32,7 +31,7 @@ func main() {
 	routingKey := routing.GameLogSlug + ".*"
 	_, _, derr := pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, 2)
 	if derr != nil {
-		fmt.Println("Failed to declare and bind queue:", err)
+		fmt.Println("Failed to declare and bind queue:", derr)
 		return
 	}
 
@@ -43,8 +42,7 @@ func main() {
 			exchange := routing.ExchangePerilDirect
 			routingKey := routing.PauseKey
 			message := routing.PlayingState{IsPaused: true}
-			pubMsg, err := json.Marshal(message)
-			err = pubsub.PublishJSON(pubChan, exchange, routingKey, pubMsg)
+			err = pubsub.PublishJSON(pubChan, exchange, routingKey, message)
 
 			if err != nil {
 				fmt.Println("Failed to publish message:", err)
@@ -55,8 +53,7 @@ func main() {
 			exchange := routing.ExchangePerilDirect
 			routingKey := routing.PauseKey
 			message := routing.PlayingState{IsPaused: false}
-			pubMsg, err := json.Marshal(message)
-			err = pubsub.PublishJSON(pubChan, exchange, routingKey, pubMsg)
+			err = pubsub.PublishJSON(pubChan, exchange, routingKey, message)
 
 			if err != nil {
 				fmt.Println("Failed to publish message:", err)

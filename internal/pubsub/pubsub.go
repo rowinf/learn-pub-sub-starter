@@ -56,6 +56,49 @@ func DeclareAndBind(
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to bind queue: %w", err)
 	}
-	fmt.Printf("Queue %s bound to exchange %s with key %s\n", queue.Name, exchange, key)
 	return channel, queue, nil
+}
+
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType int, // an enum to represent "durable" or "transient"
+	handler func(T),
+) error {
+	var err error
+	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
+	if err != nil {
+		return fmt.Errorf("failed to declare and bind queue: %w", err)
+	}
+	msgs, err := channel.Consume(
+		queue.Name,
+		"",    // consumer tag
+		false, // auto-acknowledge
+		false, // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,   // arguments
+	)
+	if err != nil {
+		return fmt.Errorf("failed to consume messages: %w", err)
+	}
+	go func() {
+		for msg := range msgs {
+			var val T
+			err := json.Unmarshal(msg.Body, &val)
+			if err != nil {
+				fmt.Printf("failed to unmarshal message: %v\n", err)
+				continue
+			}
+			handler(val)
+			err = msg.Ack(false) // acknowledge the message
+			if err != nil {
+				fmt.Printf("failed to acknowledge message: %v\n", err)
+			}
+		}
+	}()
+
+	return err
 }
