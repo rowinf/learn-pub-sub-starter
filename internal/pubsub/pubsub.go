@@ -41,7 +41,9 @@ func DeclareAndBind(
 		simpleQueueType == 1, // delete when unused
 		simpleQueueType == 1, // exclusive
 		false,                // no-wait
-		nil,                  // arguments
+		amqp.Table{
+			"x-dead-letter-exchange": "peril_dlx",
+		},
 	)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to declare queue: %w", err)
@@ -59,13 +61,21 @@ func DeclareAndBind(
 	return channel, queue, nil
 }
 
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func SubscribeJSON[T any](
 	conn *amqp.Connection,
 	exchange,
 	queueName,
 	key string,
 	simpleQueueType int, // an enum to represent "durable" or "transient"
-	handler func(T),
+	handler func(T) AckType,
 ) error {
 	var err error
 	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
@@ -92,10 +102,22 @@ func SubscribeJSON[T any](
 				fmt.Printf("failed to unmarshal message: %v\n", err)
 				continue
 			}
-			handler(val)
-			err = msg.Ack(false) // acknowledge the message
-			if err != nil {
-				fmt.Printf("failed to acknowledge message: %v\n", err)
+			ackType := handler(val)
+			if ackType == Ack {
+				err = msg.Ack(false) // acknowledge the message
+				if err != nil {
+					fmt.Printf("failed to acknowledge message: %v\n", err)
+				}
+			} else if ackType == NackRequeue {
+				err = msg.Nack(false, true)
+				if err != nil {
+					fmt.Printf("failed to negatively acknowledge message (requeue): %v\n", err)
+				}
+			} else if ackType == NackDiscard {
+				err = msg.Nack(false, false)
+				if err != nil {
+					fmt.Printf("failed to negatively acknowledge message (discard): %v\n", err)
+				}
 			}
 		}
 	}()
