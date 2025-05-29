@@ -1,7 +1,9 @@
 package pubsub
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 
@@ -123,4 +125,25 @@ func SubscribeJSON[T any](
 	}()
 
 	return err
+}
+
+func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
+	var body bytes.Buffer
+	enc := gob.NewEncoder(&body)
+	err := enc.Encode(val)
+
+	if err != nil {
+		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
+	err = ch.PublishWithContext(context.Background(), exchange, key, false, false, amqp.Publishing{
+		ContentType: "application/gob",
+		Body:        body.Bytes(),
+	})
+	if err != nil {
+		fmt.Printf("Failed to publish game log: %v\n", err)
+	} else {
+		fmt.Println("Successfully published game log!")
+	}
+	return nil
 }
