@@ -29,7 +29,7 @@ func main() {
 	exchange := routing.ExchangePerilTopic
 	queueName := routing.GameLogSlug
 	routingKey := routing.GameLogSlug + ".*"
-	_, _, derr := pubsub.DeclareAndBind(conn, exchange, queueName, routingKey, 2)
+	derr := pubsub.SubscribeGOB(conn, exchange, queueName, routingKey, pubsub.Durable, handlerGameLog)
 	if derr != nil {
 		fmt.Println("Failed to declare and bind queue:", derr)
 		return
@@ -43,7 +43,6 @@ func main() {
 			routingKey := routing.PauseKey
 			message := routing.PlayingState{IsPaused: true}
 			err = pubsub.PublishJSON(pubChan, exchange, routingKey, message)
-
 			if err != nil {
 				fmt.Println("Failed to publish message:", err)
 				break
@@ -54,7 +53,6 @@ func main() {
 			routingKey := routing.PauseKey
 			message := routing.PlayingState{IsPaused: false}
 			err = pubsub.PublishJSON(pubChan, exchange, routingKey, message)
-
 			if err != nil {
 				fmt.Println("Failed to publish message:", err)
 				break
@@ -66,4 +64,10 @@ func main() {
 			fmt.Println("Unknown command. Type 'help' for a list of commands.")
 		}
 	}
+}
+
+func handlerGameLog(gl routing.GameLog) pubsub.AckType {
+	defer fmt.Print("> ")
+	gamelogic.WriteLog(gl)
+	return pubsub.Ack
 }

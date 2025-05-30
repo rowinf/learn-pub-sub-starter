@@ -31,7 +31,7 @@ func DeclareAndBind(
 	exchange,
 	queueName,
 	key string,
-	simpleQueueType int, // an enum to represent "durable" or "transient"
+	simpleQueueType SimpleQueueType, // an enum to represent "durable" or "transient"
 ) (*amqp.Channel, amqp.Queue, error) {
 	channel, err := conn.Channel()
 	if err != nil {
@@ -71,13 +71,60 @@ const (
 	NackDiscard
 )
 
+type SimpleQueueType int
+
+const (
+	_ SimpleQueueType = iota
+	Transient
+	Durable
+)
+
+func JSONUnmarshaller[T any](bytes []byte) (T, error) {
+	var val T
+	err := json.Unmarshal(bytes, &val)
+	return val, err
+}
+
+func GOBUnmarshaler[T any](data []byte) (T, error) {
+	var val T
+	values := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(values)
+	err := dec.Decode(&val)
+	return val, err
+}
+
+func SubscribeGOB[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType, // an enum to represent "durable" or "transient"
+	handler func(T) AckType,
+) error {
+	err := subscribe(conn, exchange, queueName, key, simpleQueueType, handler, GOBUnmarshaler)
+	return err
+}
+
 func SubscribeJSON[T any](
 	conn *amqp.Connection,
 	exchange,
 	queueName,
 	key string,
-	simpleQueueType int, // an enum to represent "durable" or "transient"
+	simpleQueueType SimpleQueueType, // an enum to represent "durable" or "transient"
 	handler func(T) AckType,
+) error {
+	err := subscribe(conn, exchange, queueName, key, simpleQueueType, handler, JSONUnmarshaller)
+	return err
+}
+
+func subscribe[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T) AckType,
+	unmarshaller func([]byte) (T, error),
 ) error {
 	var err error
 	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
@@ -98,8 +145,7 @@ func SubscribeJSON[T any](
 	}
 	go func() {
 		for msg := range msgs {
-			var val T
-			err := json.Unmarshal(msg.Body, &val)
+			val, err := unmarshaller(msg.Body)
 			if err != nil {
 				fmt.Printf("failed to unmarshal message: %v\n", err)
 				continue
@@ -131,7 +177,6 @@ func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	var body bytes.Buffer
 	enc := gob.NewEncoder(&body)
 	err := enc.Encode(val)
-
 	if err != nil {
 		return fmt.Errorf("failed to marshal value: %w", err)
 	}

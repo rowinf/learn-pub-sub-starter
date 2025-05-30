@@ -35,20 +35,20 @@ func main() {
 	}
 	gameState := gamelogic.NewGameState(userName)
 	defer boundChannel.Close()
-	armyMovesChannel, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, userName, routing.ArmyMovesPrefix+".*", 1)
-	warChan, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, userName, routing.WarRecognitionsPrefix+".*", 1)
+	armyMovesChannel, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, userName, routing.ArmyMovesPrefix+".*", pubsub.Transient)
+	warChan, _, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, userName, routing.WarRecognitionsPrefix+".*", pubsub.Transient)
 
-	logChan, _, derr := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routing.GameLogSlug+".*", 2)
+	logChan, _, derr := pubsub.DeclareAndBind(conn, routing.ExchangePerilTopic, routing.GameLogSlug, routing.GameLogSlug+".*", pubsub.Durable)
 	if derr != nil {
 		fmt.Println("Failed to subscribe to queue:", derr)
 		return
 	}
-	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, userName+"_"+routing.WarRecognitionsPrefix, routing.WarRecognitionsPrefix+"."+userName, 2, handlerWar(gameState, logChan))
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, userName+"_"+routing.WarRecognitionsPrefix, routing.WarRecognitionsPrefix+"."+userName, pubsub.Durable, handlerWar(gameState, logChan))
 	if err != nil {
 		fmt.Println("Failed to subscribe to queue:", err)
 		return
 	}
-	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, userName, routing.ArmyMovesPrefix+".*", 1, handlerMove(gameState, warChan))
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilTopic, userName, routing.ArmyMovesPrefix+".*", pubsub.Transient, handlerMove(gameState, warChan))
 	if err != nil {
 		fmt.Println("Failed to subscribe to queue:", err)
 		return
@@ -136,6 +136,7 @@ func handlerWar(gs *gamelogic.GameState, ch *amqp.Channel) func(gamelogic.Recogn
 			msg = winner + " won a war against " + loser
 		}
 
+		fmt.Println(routing.ExchangePerilTopic, routing.GameLogSlug+"."+gs.Player.Username, outcome, msg)
 		err := pubsub.PublishGob(ch, routing.ExchangePerilTopic, routing.GameLogSlug+"."+gs.Player.Username, routing.GameLog{
 			CurrentTime: time.Now(),
 			Message:     msg,
